@@ -2,9 +2,8 @@
 //  ProcessModule.swift
 //  Forge
 //
-//  Sends audio recordings to Claude and returns transcripts.
-//  Feature 3: transcription only (audio → raw text).
-//  Feature 4 will extend this with structured scope + task parsing.
+//  Feature 3: transcribe(recording:) — audio → raw transcript.
+//  Feature 4: structure(transcript:) — transcript → StructuredScope (scope summary + trade tasks).
 //
 //  Uses URLSession directly — no extra SPM dependency needed.
 //  API reference: https://docs.anthropic.com/en/api/messages
@@ -83,6 +82,153 @@ enum ProcessModule {
         Return only the spoken words with no commentary, preamble, or formatting. \
         If no intelligible speech is present, return exactly: [No speech detected]
         """
+
+    // MARK: - Structuring
+
+    /// Sends a completed transcript to Claude and returns a parsed StructuredScope
+    /// containing a prose scope summary and a flat list of trade tasks.
+    /// Callers are responsible for persisting the result as SwiftData models.
+    static func structure(transcript: String) async throws -> StructuredScope {
+        guard let apiKey = KeychainHelper.loadAPIKey(), !apiKey.isEmpty else {
+            throw ProcessError.noAPIKey
+        }
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ProcessError.emptyResponse
+        }
+
+        let body = AnthropicRequest(
+            model: model,
+            maxTokens: 4096,
+            messages: [
+                AnthropicMessage(role: "user", content: [
+                    AnthropicContent(text: structuringPrompt(for: transcript)),
+                ])
+            ]
+        )
+
+        let urlRequest = try makeURLRequest(apiKey: apiKey, body: body)
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw ProcessError.invalidResponse
+        }
+        guard http.statusCode == 200 else {
+            let detail = String(data: data, encoding: .utf8) ?? "no body"
+            throw ProcessError.apiError(http.statusCode, detail)
+        }
+
+        let decoded = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+        guard let text = decoded.content.first(where: { $0.type == "text" })?.text,
+              !text.isEmpty else {
+            throw ProcessError.emptyResponse
+        }
+
+        return try parseStructuredScope(from: text)
+    }
+
+    // MARK: - Structuring helpers
+
+    private static func structuringPrompt(for transcript: String) -> String {
+        """
+        You are a construction scope analyst. Structure this job-walk transcript into a scope document.
+
+        TRANSCRIPT:
+        ---
+        \(transcript)
+        ---
+
+        Return ONLY a valid JSON object — no markdown fences, no commentary, no extra text:
+
+        {
+          "scope_summary": "Prose scope document organized by area (kitchen, bathroom, exterior, etc.). \
+        For each area include: what was decided/confirmed, open questions, and any risks noted.",
+          "tasks_by_trade": [
+            {"trade": "demo", "description": "Remove existing tile in master bath", "is_question": false},
+            {"trade": "plumbing", "description": "Confirm if toilet relocation is required", "is_question": true}
+          ]
+        }
+
+        Valid trade values: demo, framing, plumbing, electrical, HVAC, drywall, tile, paint, \
+        carpentry, flooring, roofing, windows, doors, other.
+
+        CRITICAL RULES:
+        - Never guess. If something is unclear or needs confirmation, set is_question to true.
+        - scope_summary must be a single string (use \\n for line breaks inside the JSON string).
+        - Return ONLY the JSON object — nothing else.
+        """
+    }
+
+    private static func parseStructuredScope(from rawText: String) throws -> StructuredScope {
+        let cleaned = strippingMarkdownFences(from: rawText)
+        guard let jsonData = cleaned.data(using: .utf8) else {
+            throw ProcessError.malformedJSON("Response could not be decoded as UTF-8.")
+        }
+        do {
+            let dto = try JSONDecoder().decode(ClaudeStructuredResponse.self, from: jsonData)
+            let tasks = dto.tasksByTrade.map {
+                StructuredScope.Task(trade: $0.trade,
+                                     taskDescription: $0.description,
+                                     isQuestion: $0.isQuestion)
+            }
+            return StructuredScope(scopeSummary: dto.scopeSummary, tasks: tasks)
+        } catch {
+            throw ProcessError.malformedJSON(error.localizedDescription)
+        }
+    }
+
+    /// Strips leading/trailing markdown code fences that Claude sometimes adds.
+    private static func strippingMarkdownFences(from text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("```") {
+            // Drop the opening fence line (e.g. "```json\n")
+            if let nl = s.firstIndex(of: "\n") {
+                s = String(s[s.index(after: nl)...])
+            }
+        }
+        if s.hasSuffix("```") {
+            s = String(s.dropLast(3))
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - StructuredScope (returned by ProcessModule.structure)
+
+/// Value type produced by ProcessModule.structure(transcript:).
+/// Callers convert this into ScopePacket + TradeTask SwiftData objects.
+struct StructuredScope {
+    let scopeSummary: String
+    let tasks: [Task]
+
+    struct Task {
+        let trade: String
+        let taskDescription: String
+        let isQuestion: Bool
+    }
+}
+
+// MARK: - Claude JSON DTO (file-private)
+
+private struct ClaudeStructuredResponse: Decodable {
+    let scopeSummary: String
+    let tasksByTrade: [TaskDTO]
+
+    struct TaskDTO: Decodable {
+        let trade: String
+        let description: String
+        let isQuestion: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case trade
+            case description
+            case isQuestion = "is_question"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case scopeSummary = "scope_summary"
+        case tasksByTrade = "tasks_by_trade"
+    }
 }
 
 // MARK: - Request types (file-private)
@@ -164,6 +310,7 @@ enum ProcessError: LocalizedError {
     case invalidResponse
     case apiError(Int, String)
     case emptyResponse
+    case malformedJSON(String)
 
     var errorDescription: String? {
         switch self {
@@ -177,6 +324,8 @@ enum ProcessError: LocalizedError {
             "Claude API error \(code): \(detail)"
         case .emptyResponse:
             "Claude returned an empty response."
+        case .malformedJSON(let detail):
+            "Could not parse Claude's JSON response: \(detail)"
         }
     }
 }

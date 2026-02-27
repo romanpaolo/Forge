@@ -15,14 +15,16 @@ struct ProjectDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var captureModule = CaptureModule()
     @State private var processingIDs: Set<PersistentIdentifier> = []
+    @State private var isStructuring = false
     @State private var errorMessage: String?
     @State private var showingError = false
 
     var body: some View {
         List {
             recordingControlSection
-            projectInfoSection
             recordingsSection
+            scopeSection
+            projectInfoSection
         }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.large)
@@ -100,6 +102,51 @@ struct ProjectDetailView: View {
         }
     }
 
+    private var scopeSection: some View {
+        Section("Scope Packet") {
+            if isStructuring {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Generating scope…")
+                        .foregroundStyle(.secondary)
+                }
+            } else if project.packets.isEmpty {
+                if let transcript = firstAvailableTranscript {
+                    Button {
+                        Task { await generateScope(from: transcript) }
+                    } label: {
+                        Label("Generate Scope from Transcript",
+                              systemImage: "doc.text.magnifyingglass")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    Text("Transcribe a recording first to generate a scope.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
+            } else {
+                ForEach(project.packets) { packet in
+                    PacketRow(packet: packet)
+                }
+                // Allow re-generating when new recordings are transcribed
+                if let transcript = firstAvailableTranscript {
+                    Button {
+                        Task { await generateScope(from: transcript) }
+                    } label: {
+                        Label("Regenerate Scope",
+                              systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The transcript from the first recording that has one.
+    private var firstAvailableTranscript: String? {
+        project.recordings.first(where: { $0.transcript != nil })?.transcript
+    }
+
     // MARK: - Recording actions
 
     private func startRecording() async {
@@ -153,12 +200,85 @@ struct ProjectDetailView: View {
         }
     }
 
+    // MARK: - Structuring
+
+    private func generateScope(from transcript: String) async {
+        guard !isStructuring else { return }
+        isStructuring = true
+        defer { isStructuring = false }
+        do {
+            let structured = try await ProcessModule.structure(transcript: transcript)
+
+            let packet = ScopePacket(scopeSummary: structured.scopeSummary)
+            modelContext.insert(packet)
+
+            for task in structured.tasks {
+                let t = TradeTask(
+                    trade: task.trade,
+                    taskDescription: task.taskDescription,
+                    isQuestion: task.isQuestion
+                )
+                modelContext.insert(t)
+                packet.tasksByTrade.append(t)
+            }
+
+            project.packets.append(packet)
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
     // MARK: - Helpers
 
     private func formattedDuration(_ seconds: TimeInterval) -> String {
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - PacketRow
+
+private struct PacketRow: View {
+    let packet: ScopePacket
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(packet.generatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                statusBadge
+            }
+            HStack(spacing: 12) {
+                let total = packet.tasksByTrade.count
+                let questions = packet.tasksByTrade.filter { $0.isQuestion }.count
+                Label("\(total) tasks", systemImage: "checklist")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if questions > 0 {
+                    Label("\(questions) questions", systemImage: "questionmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusBadge: some View {
+        let (label, color): (String, Color) = switch packet.status {
+        case .draft:    ("Draft",    .orange)
+        case .approved: ("Approved", .green)
+        case .exported: ("Exported", .blue)
+        }
+        return Text(label)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15), in: Capsule())
+            .foregroundStyle(color)
     }
 }
 
