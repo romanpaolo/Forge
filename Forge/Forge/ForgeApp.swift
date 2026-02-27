@@ -2,16 +2,13 @@
 //  ForgeApp.swift
 //  Forge
 //
-//  Created by Roman Pascua on 2/26/26.
-//
 
 import SwiftUI
-import CoreData
+import SwiftData
 import MWDATCore
 
 @main
 struct ForgeApp: App {
-    let persistenceController = PersistenceController.shared
 
     init() {
         do {
@@ -24,7 +21,6 @@ struct ForgeApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .onOpenURL { url in
                     Task {
                         do {
@@ -35,5 +31,12 @@ struct ForgeApp: App {
                     }
                 }
         }
+        .modelContainer(for: [
+            Project.self,
+            Recording.self,
+            PhotoCapture.self,
+            ScopePacket.self,
+            TradeTask.self,
+        ])
     }
 }

@@ -12,7 +12,7 @@ ScopeSnap is an iOS companion app for Ray-Ban Meta glasses that replaces the fra
 > Check off items here as each feature is built and tested.
 
 ### Phase 1 — PoC, iPhone-only (Days 1–14)
-- [ ] Project creation UI (new project, name + address)
+- [x] Project creation UI (new project, name + address) — SwiftData models, ProjectListView, NewProjectView, ProjectDetailView
 - [ ] AVAudioEngine recording (start/stop, save audio file to disk)
 - [ ] Claude audio transcription (send audio file, receive transcript)
 - [ ] Claude API structuring (send transcript, parse JSON scope + tasks)

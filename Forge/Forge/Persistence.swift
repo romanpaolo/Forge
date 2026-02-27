@@ -2,56 +2,96 @@
 //  Persistence.swift
 //  Forge
 //
-//  Created by Roman Pascua on 2/26/26.
+//  Migrated from CoreData to SwiftData.
+//  All five @Model types + PacketStatus enum live here.
 //
 
-import CoreData
+import SwiftData
+import Foundation
 
-struct PersistenceController {
-    static let shared = PersistenceController()
+// MARK: - Supporting Types
 
-    @MainActor
-    static let preview: PersistenceController = {
-        let result = PersistenceController(inMemory: true)
-        let viewContext = result.container.viewContext
-        for _ in 0..<10 {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-        }
-        do {
-            try viewContext.save()
-        } catch {
-            // Replace this implementation with code to handle the error appropriately.
-            // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-            let nsError = error as NSError
-            fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-        }
-        return result
-    }()
+enum PacketStatus: String, Codable {
+    case draft
+    case approved
+    case exported
+}
 
-    let container: NSPersistentContainer
+// MARK: - SwiftData Models
 
-    init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "Forge")
-        if inMemory {
-            container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
-        }
-        container.loadPersistentStores(completionHandler: { (storeDescription, error) in
-            if let error = error as NSError? {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
+@Model
+final class Project {
+    var name: String
+    var address: String
+    var createdAt: Date
+    @Relationship(deleteRule: .cascade) var recordings: [Recording]
+    @Relationship(deleteRule: .cascade) var packets: [ScopePacket]
 
-                /*
-                 Typical reasons for an error here include:
-                 * The parent directory does not exist, cannot be created, or disallows writing.
-                 * The persistent store is not accessible, due to permissions or data protection when the device is locked.
-                 * The device is out of space.
-                 * The store could not be migrated to the current model version.
-                 Check the error message to determine what the actual problem was.
-                 */
-                fatalError("Unresolved error \(error), \(error.userInfo)")
-            }
-        })
-        container.viewContext.automaticallyMergesChangesFromParent = true
+    init(name: String, address: String) {
+        self.name = name
+        self.address = address
+        self.createdAt = Date()
+        self.recordings = []
+        self.packets = []
+    }
+}
+
+@Model
+final class Recording {
+    var audioFileURL: URL
+    @Relationship(deleteRule: .cascade) var photos: [PhotoCapture]
+    var transcript: String?
+    var duration: TimeInterval
+    var capturedAt: Date
+
+    init(audioFileURL: URL, duration: TimeInterval = 0) {
+        self.audioFileURL = audioFileURL
+        self.photos = []
+        self.transcript = nil
+        self.duration = duration
+        self.capturedAt = Date()
+    }
+}
+
+@Model
+final class PhotoCapture {
+    var imageData: Data
+    var voiceTag: String?
+    var timestamp: TimeInterval
+
+    init(imageData: Data, voiceTag: String? = nil, timestamp: TimeInterval) {
+        self.imageData = imageData
+        self.voiceTag = voiceTag
+        self.timestamp = timestamp
+    }
+}
+
+@Model
+final class ScopePacket {
+    var scopeSummary: String
+    @Relationship(deleteRule: .cascade) var tasksByTrade: [TradeTask]
+    var status: PacketStatus
+    var generatedAt: Date
+
+    init(scopeSummary: String) {
+        self.scopeSummary = scopeSummary
+        self.tasksByTrade = []
+        self.status = .draft
+        self.generatedAt = Date()
+    }
+}
+
+@Model
+final class TradeTask {
+    var trade: String
+    var taskDescription: String
+    var isQuestion: Bool
+    var isApproved: Bool
+
+    init(trade: String, taskDescription: String, isQuestion: Bool = false) {
+        self.trade = trade
+        self.taskDescription = taskDescription
+        self.isQuestion = isQuestion
+        self.isApproved = false
     }
 }
