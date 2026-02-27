@@ -3,6 +3,7 @@
 //  Forge
 //
 //  Shows project info, recording controls, and the list of saved recordings.
+//  Feature 3: adds per-recording Transcribe button → calls ProcessModule.transcribe().
 //
 
 import SwiftUI
@@ -13,6 +14,7 @@ struct ProjectDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @State private var captureModule = CaptureModule()
+    @State private var processingIDs: Set<PersistentIdentifier> = []
     @State private var errorMessage: String?
     @State private var showingError = false
 
@@ -24,7 +26,7 @@ struct ProjectDetailView: View {
         }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.large)
-        .alert("Recording Error", isPresented: $showingError) {
+        .alert("Error", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
@@ -37,7 +39,6 @@ struct ProjectDetailView: View {
         Section {
             if captureModule.isRecording {
                 VStack(spacing: 16) {
-                    // Live elapsed time
                     Text(formattedDuration(captureModule.elapsedSeconds))
                         .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
                         .foregroundStyle(.red)
@@ -88,14 +89,18 @@ struct ProjectDetailView: View {
                     .font(.subheadline)
             } else {
                 ForEach(project.recordings) { recording in
-                    RecordingRow(recording: recording)
+                    RecordingRow(
+                        recording: recording,
+                        isProcessing: processingIDs.contains(recording.id),
+                        onTranscribe: { Task { await transcribeRecording(recording) } }
+                    )
                 }
                 .onDelete(perform: deleteRecordings)
             }
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Recording actions
 
     private func startRecording() async {
         let granted = await captureModule.requestMicrophonePermission()
@@ -133,6 +138,21 @@ struct ProjectDetailView: View {
         project.recordings.remove(atOffsets: offsets)
     }
 
+    // MARK: - Transcription
+
+    private func transcribeRecording(_ recording: Recording) async {
+        guard !processingIDs.contains(recording.id) else { return }
+        processingIDs.insert(recording.id)
+        defer { processingIDs.remove(recording.id) }
+        do {
+            let transcript = try await ProcessModule.transcribe(recording: recording)
+            recording.transcript = transcript
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
     // MARK: - Helpers
 
     private func formattedDuration(_ seconds: TimeInterval) -> String {
@@ -146,21 +166,42 @@ struct ProjectDetailView: View {
 
 private struct RecordingRow: View {
     let recording: Recording
+    let isProcessing: Bool
+    let onTranscribe: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(recording.capturedAt.formatted(date: .abbreviated, time: .shortened))
                 .font(.subheadline.weight(.medium))
-            HStack {
+
+            HStack(alignment: .center) {
                 Label(formattedDuration(recording.duration), systemImage: "waveform")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if recording.transcript != nil {
-                    Spacer()
+
+                Spacer()
+
+                if isProcessing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if recording.transcript != nil {
                     Label("Transcribed", systemImage: "text.quote")
                         .font(.caption)
                         .foregroundStyle(.green)
+                } else {
+                    Button("Transcribe", action: onTranscribe)
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
                 }
+            }
+
+            if let transcript = recording.transcript {
+                let preview = transcript.prefix(120)
+                Text(preview + (transcript.count > 120 ? "…" : ""))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
         }
         .padding(.vertical, 2)

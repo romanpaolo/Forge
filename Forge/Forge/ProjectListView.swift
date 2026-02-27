@@ -12,6 +12,7 @@ struct ProjectListView: View {
     @Query(sort: \Project.createdAt, order: .reverse) private var projects: [Project]
     @Environment(\.modelContext) private var modelContext
     @State private var showingNewProject = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -44,6 +45,13 @@ struct ProjectListView: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gear")
+                    }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     EditButton()
                 }
@@ -60,6 +68,9 @@ struct ProjectListView: View {
         }
         .sheet(isPresented: $showingNewProject) {
             NewProjectView()
+        }
+        .sheet(isPresented: $showingSettings) {
+            APIKeySettingsView()
         }
     }
 
