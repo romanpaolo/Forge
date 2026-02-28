@@ -11,6 +11,7 @@ import MWDATCore
 struct ForgeApp: App {
 
     @State private var wearablesManager = WearablesManager()
+    @State private var offlineQueueManager = OfflineQueueManager()
 
     init() {
         do {
@@ -24,6 +25,7 @@ struct ForgeApp: App {
         WindowGroup {
             ContentView()
                 .environment(wearablesManager)
+                .environment(offlineQueueManager)
                 .onOpenURL { url in
                     Task {
                         do {

@@ -19,8 +19,12 @@ struct ScopeReviewView: View {
     @State private var editingTask: TradeTask?
     @State private var showingMarkdownShare = false
     @State private var showingPDFShare = false
+    @State private var showingBuildertrend = false
+    @State private var showingFieldNotesShare = false
     @State private var pdfURL: URL?
+    @State private var buildertrendURL: URL?
     @State private var isGeneratingPDF = false
+    @State private var isGeneratingBuildertrend = false
     @State private var copiedToClipboard = false
     @State private var errorMessage: String?
     @State private var showingError = false
@@ -99,6 +103,25 @@ struct ScopeReviewView: View {
                     }
                     .disabled(isGeneratingPDF)
 
+                    Divider()
+
+                    Button {
+                        Task { await exportForBuildertrend() }
+                    } label: {
+                        if isGeneratingBuildertrend {
+                            Label("Preparing…", systemImage: "clock")
+                        } else {
+                            Label("Export for Buildertrend (CSV)…", systemImage: "tablecells")
+                        }
+                    }
+                    .disabled(isGeneratingBuildertrend)
+
+                    Button {
+                        shareFieldNotes()
+                    } label: {
+                        Label("Export Field Notes…", systemImage: "list.clipboard")
+                    }
+
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -114,6 +137,14 @@ struct ScopeReviewView: View {
             if let url = pdfURL {
                 ShareSheet(activityItems: [url])
             }
+        }
+        .sheet(isPresented: $showingBuildertrend) {
+            if let url = buildertrendURL {
+                ShareSheet(activityItems: [url])
+            }
+        }
+        .sheet(isPresented: $showingFieldNotesShare) {
+            ShareSheet(activityItems: [BuildertrendExporter.fieldNotesExport(packet: packet, project: project)])
         }
         .alert("Export Failed", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
@@ -204,6 +235,23 @@ struct ScopeReviewView: View {
             errorMessage = error.localizedDescription
             showingError = true
         }
+    }
+
+    private func exportForBuildertrend() async {
+        isGeneratingBuildertrend = true
+        defer { isGeneratingBuildertrend = false }
+        do {
+            buildertrendURL = try BuildertrendExporter.csvTempFile(packet: packet, project: project)
+            showingBuildertrend = true
+            packet.status = .exported
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
+    private func shareFieldNotes() {
+        showingFieldNotesShare = true
     }
 }
 

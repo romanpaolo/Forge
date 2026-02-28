@@ -6,6 +6,7 @@
 //  Feature 3: per-recording Transcribe button → calls ProcessModule.transcribe()
 //  Feature 4: Scope Packet section → calls ProcessModule.structure()
 //  Phase 2:   Glasses photo capture, Bluetooth audio routing, voice-tag correlation
+//  Phase 4:   Field-use UI polish (large tap targets, haptics); offline transcription queue
 //
 
 import SwiftUI
@@ -16,15 +17,13 @@ struct ProjectDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(WearablesManager.self) private var wearablesManager
+    @Environment(OfflineQueueManager.self) private var offlineQueueManager
 
     @State private var captureModule = CaptureModule()
     @State private var processingIDs: Set<PersistentIdentifier> = []
     @State private var isStructuring = false
     @State private var errorMessage: String?
     @State private var showingError = false
-
-    // The Recording object being actively recorded — used to attach glasses photos.
-    @State private var activeRecording: Recording?
 
     var body: some View {
         List {
@@ -40,6 +39,11 @@ struct ProjectDetailView: View {
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
         }
+        // When connectivity returns, automatically drain the offline queue.
+        .onChange(of: offlineQueueManager.isOnline) { _, isOnline in
+            guard isOnline else { return }
+            Task { await processOfflineQueue() }
+        }
     }
 
     // MARK: - Sections
@@ -48,41 +52,49 @@ struct ProjectDetailView: View {
         Section {
             if captureModule.isRecording {
                 VStack(spacing: 16) {
+                    // Large timer — readable at arm's length in the field
                     Text(formattedDuration(captureModule.elapsedSeconds))
-                        .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+                        .font(.system(size: 52, weight: .bold, design: .monospaced))
                         .foregroundStyle(.red)
                         .contentTransition(.numericText())
                         .animation(.default, value: captureModule.elapsedSeconds)
+                        .frame(maxWidth: .infinity)
 
-                    // Glasses photo capture button (visible only when streaming)
+                    // Glasses photo capture (visible only while streaming)
                     if wearablesManager.isStreaming {
                         Button {
                             wearablesManager.capturePhoto()
                         } label: {
-                            Label("Capture Photo from Glasses", systemImage: "camera.circle.fill")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.blue)
-                                .frame(maxWidth: .infinity)
+                            Label("Capture Photo", systemImage: "camera.circle.fill")
+                                .font(.body.weight(.semibold))
+                                .frame(maxWidth: .infinity, minHeight: 48)
                         }
+                        .buttonStyle(.bordered)
+                        .tint(.blue)
+                        .contentShape(Rectangle())
 
-                        HStack(spacing: 4) {
-                            Image(systemName: "circle.fill")
-                                .imageScale(.small)
-                                .foregroundStyle(.green)
-                            Text("\(wearablesManager.capturedPhotos.count) photo(s) captured")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        if wearablesManager.capturedPhotos.count > 0 {
+                            Label(
+                                "\(wearablesManager.capturedPhotos.count) photo(s) captured",
+                                systemImage: "circle.fill"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .imageScale(.small)
                         }
                     }
 
+                    // Stop button — prominent, finger-sized
                     Button {
                         Task { await stopRecording() }
                     } label: {
                         Label("Stop Recording", systemImage: "stop.circle.fill")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity)
+                            .font(.title2.weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 56)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .contentShape(Rectangle())
                 }
                 .padding(.vertical, 8)
             } else {
@@ -90,12 +102,19 @@ struct ProjectDetailView: View {
                     Task { await startRecording() }
                 } label: {
                     Label("Start Recording", systemImage: "mic.circle.fill")
-                        .font(.title2.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                        .font(.title2.weight(.bold))
+                        .frame(maxWidth: .infinity, minHeight: 56)
                 }
+                .buttonStyle(.borderedProminent)
+                .contentShape(Rectangle())
                 .disabled(captureModule.captureState == .stopping)
             }
         }
+        // Haptic: heavy impact when recording starts, lighter when it stops
+        .sensoryFeedback(.impact(weight: .heavy), trigger: captureModule.isRecording) { _, new in new }
+        .sensoryFeedback(.impact(weight: .medium), trigger: captureModule.isRecording) { old, new in old && !new }
+        // Success haptic for each new photo capture from glasses
+        .sensoryFeedback(.success, trigger: wearablesManager.capturedPhotos.count) { old, new in new > old }
     }
 
     private var projectInfoSection: some View {
@@ -145,7 +164,7 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("Generate Scope from Transcript",
                               systemImage: "doc.text.magnifyingglass")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     }
                 } else {
                     Text("Transcribe a recording first to generate a scope.")
@@ -215,8 +234,8 @@ struct ProjectDetailView: View {
             wearablesManager.clearCapturedPhotos()
             for captured in pendingPhotos {
                 do {
-                    let url = try PhotoCapture.saveImage(captured.imageData)
-                    let photo = PhotoCapture(imageFileURL: url, timestamp: captured.timestamp)
+                    let photoURL = try PhotoCapture.saveImage(captured.imageData)
+                    let photo = PhotoCapture(imageFileURL: photoURL, timestamp: captured.timestamp)
                     modelContext.insert(photo)
                     recording.photos.append(photo)
                 } catch {
@@ -226,7 +245,6 @@ struct ProjectDetailView: View {
             }
 
             project.recordings.append(recording)
-            activeRecording = nil
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
@@ -249,19 +267,36 @@ struct ProjectDetailView: View {
 
     private func transcribeRecording(_ recording: Recording) async {
         guard !processingIDs.contains(recording.id) else { return }
+
+        // If offline, flag for later and show a badge — no error shown to the user.
+        guard offlineQueueManager.isOnline else {
+            recording.isTranscriptionQueued = true
+            return
+        }
+
+        recording.isTranscriptionQueued = false
         processingIDs.insert(recording.id)
         defer { processingIDs.remove(recording.id) }
+
         do {
             let transcript = try await ProcessModule.transcribe(recording: recording)
             recording.transcript = transcript
 
-            // Feature 11: Correlate any voice-tagged photos to the new transcript.
+            // Correlate any voice-tagged photos to the new transcript.
             if !recording.photos.isEmpty {
                 VoiceTagDetector.correlate(transcript: transcript, photos: recording.photos)
             }
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
+        }
+    }
+
+    /// Called automatically when connectivity returns — processes all queued recordings.
+    private func processOfflineQueue() async {
+        let queued = project.recordings.filter { $0.isTranscriptionQueued && $0.transcript == nil }
+        for recording in queued {
+            await transcribeRecording(recording)
         }
     }
 
@@ -272,7 +307,10 @@ struct ProjectDetailView: View {
         isStructuring = true
         defer { isStructuring = false }
         do {
-            let structured = try await ProcessModule.structure(transcript: transcript, projectType: project.projectType)
+            let structured = try await ProcessModule.structure(
+                transcript: transcript,
+                projectType: project.projectType
+            )
 
             let packet = ScopePacket(scopeSummary: structured.scopeSummary)
             modelContext.insert(packet)
@@ -379,6 +417,10 @@ private struct RecordingRow: View {
                     Label("Transcribed", systemImage: "text.quote")
                         .font(.caption)
                         .foregroundStyle(.green)
+                } else if recording.isTranscriptionQueued {
+                    Label("Queued", systemImage: "clock.arrow.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 } else {
                     Button("Transcribe", action: onTranscribe)
                         .font(.caption)

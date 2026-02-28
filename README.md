@@ -34,10 +34,10 @@ ScopeSnap is an iOS companion app for Ray-Ban Meta glasses that replaces the fra
 - [x] SwiftData project history and persistence — ProjectListView shows recording count, packet count, and project type icon per project
 
 ### Phase 4 — Production (Days 61–90)
-- [ ] Field-use UI polish (large tap targets, one-hand operation)
-- [ ] Offline queue (record without connectivity, process when online)
-- [ ] Buildertrend data field mappings
-- [ ] TestFlight distribution prep
+- [x] Field-use UI polish (large tap targets, one-hand operation) — 56pt buttons, .borderedProminent, .sensoryFeedback haptics on start/stop/photo-capture, .contentShape(Rectangle()) for full-area taps
+- [x] Offline queue (record without connectivity, process when online) — OfflineQueueManager (NWPathMonitor), isTranscriptionQueued on Recording, auto-drain on reconnect, "Queued" badge in RecordingRow
+- [x] Buildertrend data field mappings — BuildertrendExporter: CSV task import (6 columns) + Field Notes text; both available from ScopeReviewView export menu
+- [x] TestFlight distribution prep — PrivacyInfo.xcprivacy privacy manifest; NSBluetoothAlwaysUsageDescription + NSCameraUsageDescription in Info.plist
 
 ---
 

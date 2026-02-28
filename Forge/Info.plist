@@ -26,6 +26,10 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ScopeSnap records job-walk audio so Claude can transcribe and structure your scope document.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ScopeSnap uses Bluetooth to connect to your Ray-Ban Meta glasses for audio recording and photo capture during job walks.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ScopeSnap accesses the camera to capture job-walk photos when Ray-Ban Meta glasses are unavailable.</string>
 	<key>MWDAT</key>
 	<dict>
 		<key>AppLinkURLScheme</key>

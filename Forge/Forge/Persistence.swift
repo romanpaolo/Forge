@@ -133,6 +133,9 @@ final class Recording {
     var transcript: String?
     var duration: TimeInterval
     var capturedAt: Date
+    /// `true` while the device is offline and transcription is pending.
+    /// Cleared once transcription succeeds or is cancelled.
+    var isTranscriptionQueued: Bool
 
     init(audioFileURL: URL, duration: TimeInterval = 0) {
         self.audioFileURL = audioFileURL
@@ -140,6 +143,7 @@ final class Recording {
         self.transcript = nil
         self.duration = duration
         self.capturedAt = Date()
+        self.isTranscriptionQueued = false
     }
 }
 
