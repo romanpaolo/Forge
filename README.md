@@ -16,8 +16,8 @@ ScopeSnap is an iOS companion app for Ray-Ban Meta glasses that replaces the fra
 - [x] AVAudioEngine recording (start/stop, save audio file to disk) — CaptureModule (@Observable), AAC .m4a to Documents/Recordings/, mic permission in Info.plist
 - [x] Claude audio transcription (send audio file, receive transcript) — ProcessModule (URLSession, base64 AAC → Claude Sonnet), KeychainHelper, APIKeySettingsView, per-recording Transcribe button
 - [x] Claude API structuring (send transcript, parse JSON scope + tasks) — ProcessModule.structure(), StructuredScope value type, scopeSection in ProjectDetailView, PacketRow with status badge
-- [ ] Review/edit UI (trade sections, swipe-to-delete, tap-to-edit, amber questions)
-- [ ] Copy-to-clipboard export (formatted markdown output)
+- [x] Review/edit UI (trade sections, swipe-to-delete, tap-to-edit, amber questions) — ScopeReviewView, TaskRow, EditTaskSheet, per-item + bulk approval, status badge
+- [x] Copy-to-clipboard export (formatted markdown output) — ExportModule, share sheet via UIActivityViewController
 
 ### Phase 2 — Meta Glasses (Days 15–30)
 - [ ] Meta Wearables DAT SDK integration (MWDATCore + MWDATCamera)

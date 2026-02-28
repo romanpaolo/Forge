@@ -126,7 +126,9 @@ struct ProjectDetailView: View {
                 }
             } else {
                 ForEach(project.packets) { packet in
-                    PacketRow(packet: packet)
+                    NavigationLink(destination: ScopeReviewView(packet: packet)) {
+                        PacketRow(packet: packet)
+                    }
                 }
                 // Allow re-generating when new recordings are transcribed
                 if let transcript = firstAvailableTranscript {
