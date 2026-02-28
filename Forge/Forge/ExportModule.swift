@@ -56,7 +56,7 @@ enum ExportModule {
         "roofing", "windows", "doors", "other"
     ]
 
-    private static func groupedByTrade(_ tasks: [TradeTask]) -> [(String, [TradeTask])] {
+    static func groupedByTrade(_ tasks: [TradeTask]) -> [(String, [TradeTask])] {
         let dict = Dictionary(grouping: tasks, by: \.trade)
         let known = tradeOrder
             .filter { dict[$0] != nil }

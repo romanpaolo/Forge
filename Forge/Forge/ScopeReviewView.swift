@@ -5,6 +5,7 @@
 //  Feature 5: Review/edit a ScopePacket — tasks grouped by trade, swipe-to-delete,
 //             tap-to-edit, amber questions, per-item and bulk approval.
 //  Feature 6: Copy-to-clipboard and share sheet export (formatted markdown).
+//  Phase 3:   PDF export via PDFGenerator; project context passed in for metadata.
 //
 
 import SwiftUI
@@ -12,11 +13,17 @@ import SwiftData
 
 struct ScopeReviewView: View {
     @Bindable var packet: ScopePacket
+    let project: Project
     @Environment(\.modelContext) private var modelContext
 
     @State private var editingTask: TradeTask?
-    @State private var showingExport = false
+    @State private var showingMarkdownShare = false
+    @State private var showingPDFShare = false
+    @State private var pdfURL: URL?
+    @State private var isGeneratingPDF = false
     @State private var copiedToClipboard = false
+    @State private var errorMessage: String?
+    @State private var showingError = false
 
     private static let tradeOrder = [
         "demo", "framing", "plumbing", "electrical", "HVAC",
@@ -76,10 +83,22 @@ struct ScopeReviewView: View {
                     }
 
                     Button {
-                        showingExport = true
+                        showingMarkdownShare = true
                     } label: {
-                        Label("Share…", systemImage: "square.and.arrow.up")
+                        Label("Share as Markdown…", systemImage: "square.and.arrow.up")
                     }
+
+                    Button {
+                        Task { await exportAsPDF() }
+                    } label: {
+                        if isGeneratingPDF {
+                            Label("Generating PDF…", systemImage: "clock")
+                        } else {
+                            Label("Export as PDF…", systemImage: "doc.richtext")
+                        }
+                    }
+                    .disabled(isGeneratingPDF)
+
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -88,8 +107,18 @@ struct ScopeReviewView: View {
         .sheet(item: $editingTask) { task in
             EditTaskSheet(task: task)
         }
-        .sheet(isPresented: $showingExport) {
-            ShareSheet(text: ExportModule.markdownExport(packet: packet))
+        .sheet(isPresented: $showingMarkdownShare) {
+            ShareSheet(activityItems: [ExportModule.markdownExport(packet: packet)])
+        }
+        .sheet(isPresented: $showingPDFShare) {
+            if let url = pdfURL {
+                ShareSheet(activityItems: [url])
+            }
+        }
+        .alert("Export Failed", isPresented: $showingError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -162,6 +191,18 @@ struct ScopeReviewView: View {
         Task {
             try? await Task.sleep(for: .seconds(2))
             copiedToClipboard = false
+        }
+    }
+
+    private func exportAsPDF() async {
+        isGeneratingPDF = true
+        defer { isGeneratingPDF = false }
+        do {
+            pdfURL = try PDFGenerator.generate(packet: packet, project: project)
+            showingPDFShare = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
         }
     }
 }
@@ -254,10 +295,10 @@ private struct EditTaskSheet: View {
 // MARK: - ShareSheet
 
 private struct ShareSheet: UIViewControllerRepresentable {
-    let text: String
+    let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
 
     func updateUIViewController(_ uvc: UIActivityViewController, context: Context) {}

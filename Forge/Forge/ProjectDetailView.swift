@@ -154,7 +154,7 @@ struct ProjectDetailView: View {
                 }
             } else {
                 ForEach(project.packets) { packet in
-                    NavigationLink(destination: ScopeReviewView(packet: packet)) {
+                    NavigationLink(destination: ScopeReviewView(packet: packet, project: project)) {
                         PacketRow(packet: packet)
                     }
                 }
@@ -272,7 +272,7 @@ struct ProjectDetailView: View {
         isStructuring = true
         defer { isStructuring = false }
         do {
-            let structured = try await ProcessModule.structure(transcript: transcript)
+            let structured = try await ProcessModule.structure(transcript: transcript, projectType: project.projectType)
 
             let packet = ScopePacket(scopeSummary: structured.scopeSummary)
             modelContext.insert(packet)

@@ -25,16 +25,29 @@ struct ProjectListView: View {
                 ForEach(projects) { project in
                     NavigationLink(destination: ProjectDetailView(project: project)) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(project.name)
-                                .font(.headline)
+                            HStack(spacing: 6) {
+                                Image(systemName: project.projectType.icon)
+                                    .foregroundStyle(.secondary)
+                                    .imageScale(.small)
+                                Text(project.name)
+                                    .font(.headline)
+                            }
                             if !project.address.isEmpty {
                                 Text(project.address)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
-                            Text(project.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+                            HStack(spacing: 10) {
+                                Text(project.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                if !project.recordings.isEmpty {
+                                    Label("\(project.recordings.count)", systemImage: "waveform")
+                                }
+                                if !project.packets.isEmpty {
+                                    Label("\(project.packets.count)", systemImage: "doc.text")
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 2)
                     }

@@ -16,7 +16,7 @@ import Foundation
 enum ProcessModule {
 
     private static let messagesURL = URL(string: "https://api.anthropic.com/v1/messages")!
-    private static let model = "claude-sonnet-4-5"
+    private static let model = "claude-sonnet-4-6"
     private static let anthropicVersion = "2023-06-01"
 
     // MARK: - Public API
@@ -78,8 +78,10 @@ enum ProcessModule {
     }
 
     private static let transcriptionPrompt = """
-        Transcribe this job-walk recording verbatim. \
-        Return only the spoken words with no commentary, preamble, or formatting. \
+        Transcribe this job-walk recording verbatim. Return only the spoken words — \
+        no commentary, preamble, summary, or formatting. Preserve filler words and \
+        natural speech patterns. Transcribe construction terms, trade names, material \
+        specs, and measurements exactly as spoken. \
         If no intelligible speech is present, return exactly: [No speech detected]
         """
 
@@ -88,7 +90,7 @@ enum ProcessModule {
     /// Sends a completed transcript to Claude and returns a parsed StructuredScope
     /// containing a prose scope summary and a flat list of trade tasks.
     /// Callers are responsible for persisting the result as SwiftData models.
-    static func structure(transcript: String) async throws -> StructuredScope {
+    static func structure(transcript: String, projectType: ProjectType = .general) async throws -> StructuredScope {
         guard let apiKey = KeychainHelper.loadAPIKey(), !apiKey.isEmpty else {
             throw ProcessError.noAPIKey
         }
@@ -101,7 +103,7 @@ enum ProcessModule {
             maxTokens: 4096,
             messages: [
                 AnthropicMessage(role: "user", content: [
-                    AnthropicContent(text: structuringPrompt(for: transcript)),
+                    AnthropicContent(text: structuringPrompt(for: transcript, projectType: projectType)),
                 ])
             ]
         )
@@ -128,9 +130,14 @@ enum ProcessModule {
 
     // MARK: - Structuring helpers
 
-    private static func structuringPrompt(for transcript: String) -> String {
+    private static func structuringPrompt(for transcript: String, projectType: ProjectType) -> String {
         """
-        You are a construction scope analyst. Structure this job-walk transcript into a scope document.
+        You are an expert construction scope analyst specializing in residential remodeling. \
+        Your job is to turn raw job-walk notes into actionable scope documents that PMs and \
+        subcontractors can work from immediately.
+
+        PROJECT TYPE: \(projectType.displayName)
+        CONTEXT: \(projectType.promptGuidance)
 
         TRANSCRIPT:
         ---
@@ -140,21 +147,27 @@ enum ProcessModule {
         Return ONLY a valid JSON object — no markdown fences, no commentary, no extra text:
 
         {
-          "scope_summary": "Prose scope document organized by area (kitchen, bathroom, exterior, etc.). \
-        For each area include: what was decided/confirmed, open questions, and any risks noted.",
+          "scope_summary": "Detailed prose scope organized by area (e.g. master bath, kitchen, \
+        exterior). For each area include: (1) what was decided or confirmed, \
+        (2) open questions that must be resolved before work begins, \
+        (3) any risks, concerns, or items to verify on site. Use \\n for line breaks.",
           "tasks_by_trade": [
-            {"trade": "demo", "description": "Remove existing tile in master bath", "is_question": false},
-            {"trade": "plumbing", "description": "Confirm if toilet relocation is required", "is_question": true}
+            {"trade": "demo", "description": "Remove existing tile — master bath floor and walls to \
+        backer board", "is_question": false},
+            {"trade": "plumbing", "description": "Confirm toilet relocation — unclear from walkthrough \
+        whether drain can move 12 inches east", "is_question": true}
           ]
         }
 
         Valid trade values: demo, framing, plumbing, electrical, HVAC, drywall, tile, paint, \
         carpentry, flooring, roofing, windows, doors, other.
 
-        CRITICAL RULES:
-        - Never guess. If something is unclear or needs confirmation, set is_question to true.
-        - scope_summary must be a single string (use \\n for line breaks inside the JSON string).
-        - Return ONLY the JSON object — nothing else.
+        RULES:
+        - Never guess or invent details not present in the transcript.
+        - If something is unclear or needs confirmation before work begins, set is_question to true.
+        - Each task must be specific enough that a subcontractor knows exactly what to bid.
+        - scope_summary must be a single JSON string value (use \\n for newlines).
+        - Return ONLY the JSON object — nothing before or after it.
         """
     }
 

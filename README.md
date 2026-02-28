@@ -27,11 +27,11 @@ ScopeSnap is an iOS companion app for Ray-Ban Meta glasses that replaces the fra
 - [x] Photo ↔ transcript timestamp correlation — VoiceTagDetector.correlate(), sequential matching after transcription
 
 ### Phase 3 — Polish & Templates (Days 31–60)
-- [ ] PDF packet generation (scope + tasks + tagged photos)
-- [ ] Trade-specific Claude prompt templates (baths, kitchens, ADUs, decks, additions)
-- [ ] PM handoff email export
-- [ ] Prompt refinement pass (based on real job data)
-- [ ] SwiftData project history and persistence
+- [x] PDF packet generation (scope + tasks + tagged photos) — PDFGenerator using UIGraphicsPDFRenderer, letter-size with selectable text, export via share sheet in ScopeReviewView
+- [x] Trade-specific Claude prompt templates (baths, kitchens, ADUs, decks, additions) — ProjectType enum on Project model, per-type guidance injected into structuring prompt, type picker in NewProjectView
+- [x] PM handoff email export — ScopeReviewView "Share as Markdown" + "Export as PDF" menu items feed UIActivityViewController (Mail, AirDrop, etc.)
+- [x] Prompt refinement pass (based on real job data) — improved transcription and structuring prompts; model updated to claude-sonnet-4-6; task descriptions now must be bid-ready
+- [x] SwiftData project history and persistence — ProjectListView shows recording count, packet count, and project type icon per project
 
 ### Phase 4 — Production (Days 61–90)
 - [ ] Field-use UI polish (large tap targets, one-hand operation)
