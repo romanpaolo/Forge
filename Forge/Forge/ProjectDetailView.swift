@@ -210,12 +210,19 @@ struct ProjectDetailView: View {
             modelContext.insert(recording)
 
             // Drain accumulated glasses photos into the new Recording.
+            // Each photo is written to disk; only the URL is persisted in SwiftData.
             let pendingPhotos = wearablesManager.capturedPhotos
             wearablesManager.clearCapturedPhotos()
             for captured in pendingPhotos {
-                let photo = PhotoCapture(imageData: captured.imageData, timestamp: captured.timestamp)
-                modelContext.insert(photo)
-                recording.photos.append(photo)
+                do {
+                    let url = try PhotoCapture.saveImage(captured.imageData)
+                    let photo = PhotoCapture(imageFileURL: url, timestamp: captured.timestamp)
+                    modelContext.insert(photo)
+                    recording.photos.append(photo)
+                } catch {
+                    // Non-fatal: log and continue so the recording is still saved.
+                    print("[PhotoCapture] Failed to save photo to disk: \(error)")
+                }
             }
 
             project.recordings.append(recording)
@@ -230,6 +237,9 @@ struct ProjectDetailView: View {
         for index in offsets {
             let recording = project.recordings[index]
             try? FileManager.default.removeItem(at: recording.audioFileURL)
+            for photo in recording.photos {
+                try? FileManager.default.removeItem(at: photo.imageFileURL)
+            }
             modelContext.delete(recording)
         }
         project.recordings.remove(atOffsets: offsets)
@@ -406,7 +416,7 @@ private struct RecordingRow: View {
 
     private func photoThumbnail(for photo: PhotoCapture) -> some View {
         ZStack(alignment: .bottomLeading) {
-            if let uiImage = uiImage(from: photo.imageData) {
+            if let uiImage = UIImage(contentsOfFile: photo.imageFileURL.path(percentEncoded: false)) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
@@ -416,6 +426,10 @@ private struct RecordingRow: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color.secondary.opacity(0.2))
                     .frame(width: 64, height: 64)
+                    .overlay {
+                        Image(systemName: "photo")
+                            .foregroundStyle(.tertiary)
+                    }
             }
 
             if let tag = photo.voiceTag {
@@ -428,10 +442,6 @@ private struct RecordingRow: View {
                     .padding(2)
             }
         }
-    }
-
-    private func uiImage(from data: Data) -> UIImage? {
-        UIImage(data: data)
     }
 
     private func formattedDuration(_ seconds: TimeInterval) -> String {

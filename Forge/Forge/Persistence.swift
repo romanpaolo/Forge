@@ -55,14 +55,26 @@ final class Recording {
 
 @Model
 final class PhotoCapture {
-    var imageData: Data
+    /// Path to the JPEG on disk — stored as a URL so SwiftData doesn't embed
+    /// binary blobs in its SQLite store.
+    var imageFileURL: URL
     var voiceTag: String?
+    /// Seconds elapsed since the recording started when this photo was captured.
     var timestamp: TimeInterval
 
-    init(imageData: Data, voiceTag: String? = nil, timestamp: TimeInterval) {
-        self.imageData = imageData
+    init(imageFileURL: URL, voiceTag: String? = nil, timestamp: TimeInterval) {
+        self.imageFileURL = imageFileURL
         self.voiceTag = voiceTag
         self.timestamp = timestamp
+    }
+
+    /// Writes JPEG data to `Documents/Photos/<UUID>.jpg` and returns the URL.
+    static func saveImage(_ data: Data) throws -> URL {
+        let dir = URL.documentsDirectory.appendingPathComponent("Photos", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(UUID().uuidString).jpg")
+        try data.write(to: url, options: .atomic)
+        return url
     }
 }
 
