@@ -69,9 +69,11 @@ final class CaptureModule {
     func startRecording() async throws {
         guard captureState == .idle else { return }
 
-        // Activate audio session for recording
+        // Activate audio session for recording.
+        // .playAndRecord with .allowBluetooth routes audio through the glasses'
+        // 5-mic array when Ray-Ban Meta glasses are connected via Bluetooth.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default, options: [])
+        try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
         try session.setActive(true)
 
         let engine = AVAudioEngine()

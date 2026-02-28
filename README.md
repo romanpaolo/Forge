@@ -20,11 +20,11 @@ ScopeSnap is an iOS companion app for Ray-Ban Meta glasses that replaces the fra
 - [x] Copy-to-clipboard export (formatted markdown output) — ExportModule, share sheet via UIActivityViewController
 
 ### Phase 2 — Meta Glasses (Days 15–30)
-- [ ] Meta Wearables DAT SDK integration (MWDATCore + MWDATCamera)
-- [ ] Photo capture from glasses camera stream
-- [ ] Bluetooth audio recording path
-- [ ] Voice-tag detection ("photo:", "measurement:", "note:")
-- [ ] Photo ↔ transcript timestamp correlation
+- [x] Meta Wearables DAT SDK integration (MWDATCore + MWDATCamera) — WearablesManager (@Observable), registration flow, device discovery, GlassesSetupView, status icon in ProjectListView
+- [x] Photo capture from glasses camera stream — StreamSession + AutoDeviceSelector, photoDataPublisher, capturePhoto() button during recording, photo thumbnails in RecordingRow
+- [x] Bluetooth audio recording path — AVAudioSession .playAndRecord + .allowBluetooth in CaptureModule
+- [x] Voice-tag detection ("photo:", "measurement:", "note:") — VoiceTagDetector.detect(in:), parses trigger phrases with content extraction
+- [x] Photo ↔ transcript timestamp correlation — VoiceTagDetector.correlate(), sequential matching after transcription
 
 ### Phase 3 — Polish & Templates (Days 31–60)
 - [ ] PDF packet generation (scope + tasks + tagged photos)

@@ -3,7 +3,9 @@
 //  Forge
 //
 //  Shows project info, recording controls, and the list of saved recordings.
-//  Feature 3: adds per-recording Transcribe button → calls ProcessModule.transcribe().
+//  Feature 3: per-recording Transcribe button → calls ProcessModule.transcribe()
+//  Feature 4: Scope Packet section → calls ProcessModule.structure()
+//  Phase 2:   Glasses photo capture, Bluetooth audio routing, voice-tag correlation
 //
 
 import SwiftUI
@@ -13,11 +15,16 @@ struct ProjectDetailView: View {
     let project: Project
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(WearablesManager.self) private var wearablesManager
+
     @State private var captureModule = CaptureModule()
     @State private var processingIDs: Set<PersistentIdentifier> = []
     @State private var isStructuring = false
     @State private var errorMessage: String?
     @State private var showingError = false
+
+    // The Recording object being actively recorded — used to attach glasses photos.
+    @State private var activeRecording: Recording?
 
     var body: some View {
         List {
@@ -46,6 +53,27 @@ struct ProjectDetailView: View {
                         .foregroundStyle(.red)
                         .contentTransition(.numericText())
                         .animation(.default, value: captureModule.elapsedSeconds)
+
+                    // Glasses photo capture button (visible only when streaming)
+                    if wearablesManager.isStreaming {
+                        Button {
+                            wearablesManager.capturePhoto()
+                        } label: {
+                            Label("Capture Photo from Glasses", systemImage: "camera.circle.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.blue)
+                                .frame(maxWidth: .infinity)
+                        }
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "circle.fill")
+                                .imageScale(.small)
+                                .foregroundStyle(.green)
+                            Text("\(wearablesManager.capturedPhotos.count) photo(s) captured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Button {
                         Task { await stopRecording() }
@@ -130,7 +158,6 @@ struct ProjectDetailView: View {
                         PacketRow(packet: packet)
                     }
                 }
-                // Allow re-generating when new recordings are transcribed
                 if let transcript = firstAvailableTranscript {
                     Button {
                         Task { await generateScope(from: transcript) }
@@ -160,6 +187,11 @@ struct ProjectDetailView: View {
         }
         do {
             try await captureModule.startRecording()
+
+            // Start glasses streaming for photo capture (if registered and permitted).
+            if wearablesManager.isRegistered && wearablesManager.hasCameraPermission {
+                wearablesManager.startStreaming()
+            }
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
@@ -167,11 +199,27 @@ struct ProjectDetailView: View {
     }
 
     private func stopRecording() async {
+        // Stop glasses streaming first; photos are now in wearablesManager.capturedPhotos.
+        if wearablesManager.isStreaming {
+            await wearablesManager.stopStreaming()
+        }
+
         do {
             let (url, duration) = try await captureModule.stopRecording()
             let recording = Recording(audioFileURL: url, duration: duration)
             modelContext.insert(recording)
+
+            // Drain accumulated glasses photos into the new Recording.
+            let pendingPhotos = wearablesManager.capturedPhotos
+            wearablesManager.clearCapturedPhotos()
+            for captured in pendingPhotos {
+                let photo = PhotoCapture(imageData: captured.imageData, timestamp: captured.timestamp)
+                modelContext.insert(photo)
+                recording.photos.append(photo)
+            }
+
             project.recordings.append(recording)
+            activeRecording = nil
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
@@ -196,6 +244,11 @@ struct ProjectDetailView: View {
         do {
             let transcript = try await ProcessModule.transcribe(recording: recording)
             recording.transcript = transcript
+
+            // Feature 11: Correlate any voice-tagged photos to the new transcript.
+            if !recording.photos.isEmpty {
+                VoiceTagDetector.correlate(transcript: transcript, photos: recording.photos)
+            }
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
@@ -301,6 +354,12 @@ private struct RecordingRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                if !recording.photos.isEmpty {
+                    Label("\(recording.photos.count) photo(s)", systemImage: "photo.on.rectangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Spacer()
 
                 if isProcessing {
@@ -318,6 +377,7 @@ private struct RecordingRow: View {
                 }
             }
 
+            // Transcript preview
             if let transcript = recording.transcript {
                 let preview = transcript.prefix(120)
                 Text(preview + (transcript.count > 120 ? "…" : ""))
@@ -325,8 +385,53 @@ private struct RecordingRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
+
+            // Photo thumbnails (glasses captures)
+            if !recording.photos.isEmpty {
+                photoThumbnailStrip
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    private var photoThumbnailStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(recording.photos) { photo in
+                    photoThumbnail(for: photo)
+                }
+            }
+        }
+    }
+
+    private func photoThumbnail(for photo: PhotoCapture) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            if let uiImage = uiImage(from: photo.imageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 64, height: 64)
+            }
+
+            if let tag = photo.voiceTag {
+                Text(tag)
+                    .font(.system(size: 8, weight: .medium))
+                    .lineLimit(2)
+                    .padding(3)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(2)
+            }
+        }
+    }
+
+    private func uiImage(from data: Data) -> UIImage? {
+        UIImage(data: data)
     }
 
     private func formattedDuration(_ seconds: TimeInterval) -> String {

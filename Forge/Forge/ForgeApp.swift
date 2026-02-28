@@ -10,6 +10,8 @@ import MWDATCore
 @main
 struct ForgeApp: App {
 
+    @State private var wearablesManager = WearablesManager()
+
     init() {
         do {
             try Wearables.configure()
@@ -21,6 +23,7 @@ struct ForgeApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(wearablesManager)
                 .onOpenURL { url in
                     Task {
                         do {

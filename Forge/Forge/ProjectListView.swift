@@ -3,16 +3,21 @@
 //  Forge
 //
 //  Shows all saved projects and a button to create a new one.
+//  Phase 2: Glasses status indicator in the toolbar.
 //
 
 import SwiftUI
 import SwiftData
+import MWDATCore
 
 struct ProjectListView: View {
     @Query(sort: \Project.createdAt, order: .reverse) private var projects: [Project]
     @Environment(\.modelContext) private var modelContext
+    @Environment(WearablesManager.self) private var wearablesManager
+
     @State private var showingNewProject = false
     @State private var showingSettings = false
+    @State private var showingGlasses = false
 
     var body: some View {
         NavigationStack {
@@ -38,12 +43,17 @@ struct ProjectListView: View {
             }
             .navigationTitle("ScopeSnap")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showingNewProject = true
+                        showingGlasses = true
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: glassesIcon)
+                            .foregroundStyle(glassesColor)
                     }
+                    .accessibilityLabel("Glasses connection")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -52,8 +62,12 @@ struct ProjectListView: View {
                         Image(systemName: "gear")
                     }
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingNewProject = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
             .overlay {
@@ -72,7 +86,34 @@ struct ProjectListView: View {
         .sheet(isPresented: $showingSettings) {
             APIKeySettingsView()
         }
+        .sheet(isPresented: $showingGlasses) {
+            GlassesSetupView()
+        }
     }
+
+    // MARK: - Glasses status
+
+    private var glassesIcon: String {
+        if wearablesManager.isRegistered && wearablesManager.hasDevice {
+            return "glasses"
+        } else if wearablesManager.isRegistered {
+            return "glasses"
+        } else {
+            return "glasses"
+        }
+    }
+
+    private var glassesColor: Color {
+        if wearablesManager.isRegistered && wearablesManager.hasDevice {
+            return .green
+        } else if wearablesManager.isRegistered {
+            return .orange
+        } else {
+            return .secondary
+        }
+    }
+
+    // MARK: - Actions
 
     private func deleteProjects(at offsets: IndexSet) {
         for index in offsets {
