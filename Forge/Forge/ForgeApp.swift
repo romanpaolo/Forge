@@ -6,6 +6,9 @@
 import SwiftUI
 import SwiftData
 import MWDATCore
+import OSLog
+
+private let logger = Logger(subsystem: "com.scopesnap", category: "App")
 
 @main
 struct ForgeApp: App {
@@ -31,7 +34,7 @@ struct ForgeApp: App {
                         do {
                             _ = try await Wearables.shared.handleUrl(url)
                         } catch {
-                            print("Failed to handle wearables URL: \(error)")
+                            logger.error("Failed to handle wearables URL: \(error, privacy: .public)")
                         }
                     }
                 }

@@ -11,6 +11,9 @@
 
 import SwiftUI
 import SwiftData
+import OSLog
+
+private let logger = Logger(subsystem: "com.scopesnap", category: "PhotoCapture")
 
 struct ProjectDetailView: View {
     let project: Project
@@ -240,7 +243,7 @@ struct ProjectDetailView: View {
                     recording.photos.append(photo)
                 } catch {
                     // Non-fatal: log and continue so the recording is still saved.
-                    print("[PhotoCapture] Failed to save photo to disk: \(error)")
+                    logger.error("Failed to save photo to disk: \(error, privacy: .public)")
                 }
             }
 
